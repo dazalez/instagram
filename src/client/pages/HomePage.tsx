@@ -30,7 +30,7 @@ export const HomePage = () => {
   const stories = useStories(
     String(selectedItem),
     contentType === 1 || false,
-    StoriesType.Highlights
+    StoriesType.UserStories
   )
   const posts = useHomePosts()
 

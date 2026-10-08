@@ -2,7 +2,6 @@
   "name": "server",
   "version": "1.0.0",
   "dependencies": {
-    "cors-anywhere": "0.4.4",
-    "instagram-private-api": "1.46.1"
+    "cors-anywhere": "0.4.4"
   }
 }

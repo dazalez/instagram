@@ -1,19 +1,14 @@
-import { IgApiClient } from "instagram-private-api"
-
+/**
+ * Sessions are now opaque session ids issued by the aiograpi-rest service
+ * (the `X-Session-ID` header). The server no longer keeps an
+ * `instagram-private-api` client in memory, so serializing/deserializing a
+ * session is just passing the id around.
+ */
 export class SessionManager {
-  public static serializeSession = async (
-    client: IgApiClient
-  ): Promise<string> => {
-    const serializedClient = await client.state.serialize()
-    delete serializedClient.constants
-    return JSON.stringify(serializedClient)
-  }
+  public static serializeSession = async (sessionId: string): Promise<string> =>
+    sessionId
 
   public static deserializeSession = async (
-    serializedClient: string
-  ): Promise<IgApiClient> => {
-    const client = new IgApiClient()
-    await client.state.deserialize(serializedClient)
-    return client
-  }
+    serializedSession: string,
+  ): Promise<string> => serializedSession
 }

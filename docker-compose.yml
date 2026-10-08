@@ -5,3 +5,6 @@ services:
     image: instagram:latest
     ports:
       - "9999:4000"
+    environment:
+      # URL of the deployed aiograpi-rest service.
+      INSTAGRAPI_REST_URL: "https://aiograpi.instagram.homelab.dazalez.dev"

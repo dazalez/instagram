@@ -34,7 +34,7 @@ export type UseAuthType = {
 export const useAuth = () => {
   const [localStorageSession, setLocalStorageSession] = useLocalStorage(
     "session",
-    ""
+    "",
   )
 
   const [isLoggedIn, setIsLoggedIn] = useState(true)
@@ -58,7 +58,10 @@ export const useAuth = () => {
       credentials: "include",
       body: JSON.stringify(loginRequest),
     })
-    if (response.status >= 300) throw Error("Usuario o contraseña incorrectos.")
+    if (response.status >= 300) {
+      const body = await response.json().catch(() => undefined)
+      throw Error(body?.message || "Usuario o contraseña incorrectos.")
+    }
     return response.json()
   }
 

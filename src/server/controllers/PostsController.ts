@@ -1,66 +1,85 @@
 import { Request, Response } from "express"
 import { SessionManager } from "../utils/SessionManager"
+import { callInstagrapi } from "../utils/InstagrapiClient"
 import { MediaType, Post } from "../../../types/types"
+
+const toUnixSeconds = (takenAt: any): number => {
+  if (typeof takenAt === "number") return takenAt
+  return Math.floor(new Date(takenAt).getTime() / 1000)
+}
+
+const mapMediaToPost = (media: any): Post => {
+  // The timeline feed returns raw Instagram payloads (caption.text,
+  // carousel_media, video_versions), while /user/posts returns aiograpi's
+  // extracted Media (caption_text, resources, video_url). Support both.
+  const carousel = media.resources || media.carousel_media
+  const medias =
+    media.media_type === 1 || media.media_type === 2
+      ? [
+          {
+            type: media.media_type === 1 ? MediaType.Image : MediaType.Video,
+            id: String(media.id),
+            mediaUrl:
+              media.media_type === 1
+                ? media.image_versions2?.candidates?.[0]?.url
+                : media.video_url || media.video_versions?.[0]?.url,
+            previewUrl:
+              media.media_type === 2
+                ? media.image_versions2?.candidates?.[0]?.url
+                : undefined,
+          },
+        ]
+      : carousel
+        ? carousel.map((m: any) => ({
+            type: m.media_type === 1 ? MediaType.Image : MediaType.Video,
+            id: String(m.pk ?? m.id),
+            mediaUrl:
+              m.media_type === 1
+                ? m.thumbnail_url || m.image_versions2?.candidates?.[0]?.url
+                : m.video_url ||
+                  m.video_versions?.[0]?.url ||
+                  m.thumbnail_url,
+            previewUrl:
+              m.media_type === 2
+                ? m.thumbnail_url || m.image_versions2?.candidates?.[0]?.url
+                : undefined,
+          }))
+        : []
+
+  return {
+    id: String(media.id),
+    username: media.user?.username || "",
+    medias,
+    caption: media.caption_text || media.caption?.text || "",
+    likes: media.like_count ?? 0,
+    takenAt: toUnixSeconds(media.taken_at),
+  }
+}
 
 export class PostsController {
   public static homePosts = async (req: Request, res: Response) => {
     try {
-      const client = await SessionManager.deserializeSession(
-        String(req.headers.session)
+      const session = await SessionManager.deserializeSession(
+        String(req.headers.session),
       )
-      const homePostsResponse = client.feed.timeline()
-      if (req.query.next) homePostsResponse.deserialize(String(req.query.next))
-      const homePosts: Post[] = (await homePostsResponse.items())
-        .filter((i) => i.user.friendship_status?.following)
-        .map((i) => {
-          return {
-            id: i.ad_id || i.id,
-            username: i.user.username,
-            medias:
-              i.media_type === 1 || i.media_type === 2
-                ? [
-                    {
-                      type:
-                        i.media_type === 1 ? MediaType.Image : MediaType.Video,
-                      id: i.id,
-                      mediaUrl:
-                        i.media_type === 1
-                          ? i.image_versions2?.candidates[0].url
-                          : i.video_versions && i.video_versions[0].url,
-                      previewUrl:
-                        i.media_type === 2
-                          ? i.image_versions2?.candidates[0].url
-                          : undefined,
-                    },
-                  ]
-                : i.carousel_media
-                ? i.carousel_media.map((m) => {
-                    return {
-                      type:
-                        m.media_type === 1 ? MediaType.Image : MediaType.Video,
-                      id: m.id,
-                      mediaUrl:
-                        m.media_type === 1
-                          ? m.image_versions2?.candidates[0].url
-                          : // @ts-ignore
-                            m.video_versions && m.video_versions[0].url,
-                      previewUrl:
-                        m.media_type === 2
-                          ? m.image_versions2?.candidates[0].url
-                          : undefined,
-                    }
-                  })
-                : [],
-            caption: i.caption?.text || "",
-            likes: i.like_count,
-            takenAt: i.taken_at,
-          }
-        })
+      const response = await callInstagrapi("/account/feed/timeline", {
+        session,
+        query: {
+          max_id: req.query.next ? String(req.query.next) : undefined,
+        },
+      })
+      if (response.status >= 300) {
+        res.sendStatus(400)
+        return
+      }
+      const feedItems: any[] = response.body?.feed_items || []
+      const homePosts: Post[] = feedItems
+        .map((item) => item.media_or_ad)
+        .filter((media) => media?.user?.friendship_status?.following)
+        .map(mapMediaToPost)
       res.send({
         posts: homePosts,
-        next: homePostsResponse.isMoreAvailable()
-          ? homePostsResponse.serialize()
-          : undefined,
+        next: response.body?.next_max_id || undefined,
       })
     } catch (e) {
       res.sendStatus(400)
@@ -69,63 +88,25 @@ export class PostsController {
 
   public static userPosts = async (req: Request, res: Response) => {
     try {
-      const client = await SessionManager.deserializeSession(
-        String(req.headers.session)
+      const session = await SessionManager.deserializeSession(
+        String(req.headers.session),
       )
-      const userId = await client.user.getIdByUsername(
-        String(req.query.username)
-      )
-      const userPostsResponse = client.feed.user(userId)
-      if (req.query.next) userPostsResponse.deserialize(String(req.query.next))
-      const userPosts: Post[] = (await userPostsResponse.items()).map((i) => {
-        return {
-          id: i.id,
-          username: i.user.username,
-          medias:
-            i.media_type === 1 || i.media_type === 2
-              ? [
-                  {
-                    type:
-                      i.media_type === 1 ? MediaType.Image : MediaType.Video,
-                    id: i.id,
-                    mediaUrl:
-                      i.media_type === 1
-                        ? i.image_versions2?.candidates[0].url
-                        : i.video_versions && i.video_versions[0].url,
-                    previewUrl:
-                      i.media_type === 2
-                        ? i.image_versions2?.candidates[0].url
-                        : undefined,
-                  },
-                ]
-              : i.carousel_media
-              ? i.carousel_media.map((m) => {
-                  return {
-                    type:
-                      m.media_type === 1 ? MediaType.Image : MediaType.Video,
-                    id: m.id,
-                    mediaUrl:
-                      m.media_type === 1
-                        ? m.image_versions2?.candidates[0].url
-                        : // @ts-ignore
-                          m.video_versions && m.video_versions[0].url,
-                    previewUrl:
-                      m.media_type === 2
-                        ? m.image_versions2?.candidates[0].url
-                        : undefined,
-                  }
-                })
-              : [],
-          caption: i.caption?.text || "",
-          likes: i.like_count,
-          takenAt: i.taken_at,
-        }
+      const response = await callInstagrapi("/user/posts", {
+        session,
+        query: {
+          username: String(req.query.username),
+          amount: 50,
+          cursor: req.query.next ? String(req.query.next) : undefined,
+        },
       })
+      if (response.status >= 300) {
+        res.sendStatus(400)
+        return
+      }
+      const userPosts: Post[] = (response.body?.items || []).map(mapMediaToPost)
       res.send({
         posts: userPosts,
-        next: userPostsResponse.isMoreAvailable()
-          ? userPostsResponse.serialize()
-          : undefined,
+        next: response.body?.next_cursor || undefined,
       })
     } catch (e) {
       res.sendStatus(400)

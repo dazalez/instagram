@@ -5,6 +5,7 @@ import { useLocalStorage } from "./useLocalStorage"
 export enum StoriesType {
   Stories,
   Highlights,
+  UserStories,
 }
 
 export const useStories = (id: string, allowed: boolean, type: StoriesType) => {
@@ -14,6 +15,8 @@ export const useStories = (id: string, allowed: boolean, type: StoriesType) => {
     type === StoriesType.Stories
       ? `/api/stories/stories?username=${id}`
       : type === StoriesType.Highlights
+      ? `/api/stories/stories?highlight=${id}`
+      : type === StoriesType.UserStories
       ? `/api/stories/stories?id=${id}`
       : ""
 
@@ -27,7 +30,7 @@ export const useStories = (id: string, allowed: boolean, type: StoriesType) => {
   }
 
   const storiesQuery: UseQueryResult<Story[], Error> = useQuery(
-    ["stories", id],
+    ["stories", type, id],
     storiesFetch,
     {
       enabled: allowed,
